@@ -1,0 +1,46 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Player {
+  id           String      @id @default(uuid())
+  anonymousId  String      @unique
+  username     String      @default("ArcadePlayer")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  scores       Score[]
+  challenges   Challenge[] @relation("CreatorChallenges")
+
+  @@index([anonymousId])
+}
+
+model Score {
+  id          String   @id @default(uuid())
+  gameId      String
+  score       Int
+  meta        String?  // JSON with extra info e.g. ms, combo, accuracy
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  isDaily     Boolean  @default(false)
+  dailyDate   String?  // YYYY-MM-DD
+
+  @@index([gameId, score(sort: Desc)])
+  @@index([gameId, dailyDate, score(sort: Desc)])
+}
+
+model Challenge {
+  id          String    @id @default(uuid())
+  gameId      String
+  targetScore Int
+  creatorId   String
+  creator     Player    @relation("CreatorChallenges", fields: [creatorId], references: [id], onDelete: Cascade)
+  seed        Int       @default(42)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+}
