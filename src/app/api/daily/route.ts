@@ -9,11 +9,10 @@ export async function GET() {
     const dateStr = now.toISOString().split('T')[0];
     const seed = getDailySeed();
 
-    // Deterministically pick today's featured game based on day
+    // Deterministically rotate across all 10 games based on UTC day
     const dayNumber = Math.floor(now.getTime() / (1000 * 60 * 60 * 24));
-    const playableGames = ['perfect-stack', 'reaction-test', 'gravity-flip'];
-    const featuredGameId = playableGames[dayNumber % playableGames.length];
-    const featuredGame = GAMES_CATALOG.find((g) => g.id === featuredGameId);
+    const featuredGame = GAMES_CATALOG[dayNumber % GAMES_CATALOG.length];
+    const featuredGameId = featuredGame.id;
 
     // Calculate time remaining until midnight UTC
     const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
@@ -21,15 +20,15 @@ export async function GET() {
     const hoursRemaining = Math.floor(msRemaining / (1000 * 60 * 60));
     const minutesRemaining = Math.floor((msRemaining % (1000 * 60 * 60)) / (1000 * 60));
 
-    // Get today's top 10 daily scores for this game
-    const lowerIsBetter = featuredGameId === 'reaction-test';
+    // Get today's top 20 daily scores for this game
+    const lowerIsBetter = featuredGame.lowerIsBetter ?? (featuredGameId === 'reaction-test');
     const topDaily = await prisma.score.findMany({
       where: {
         gameId: featuredGameId,
         isDaily: true,
         dailyDate: dateStr,
       },
-      take: 10,
+      take: 20,
       orderBy: {
         score: lowerIsBetter ? 'asc' : 'desc',
       },

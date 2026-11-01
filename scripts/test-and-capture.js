@@ -10,13 +10,37 @@ if (!fs.existsSync(SCREENSHOT_DIR)) {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 }
 
-const EDGE_PATH = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+function findBrowserPath() {
+  if (process.env.BROWSER_PATH && fs.existsSync(process.env.BROWSER_PATH)) {
+    return process.env.BROWSER_PATH;
+  }
+
+  const candidates = [
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error('No compatible Chromium/Edge browser found. Please set BROWSER_PATH environment variable.');
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForServer(url, timeoutMs = 20000) {
+async function waitForServer(url, timeoutMs = 25000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -41,9 +65,10 @@ async function runTests() {
     await waitForServer('http://127.0.0.1:3000');
     console.log('✓ Server is responsive at http://127.0.0.1:3000');
 
-    console.log('--- Launching Headless Edge Browser ---');
+    const browserPath = findBrowserPath();
+    console.log(`--- Launching Browser at: ${browserPath} ---`);
     const browser = await puppeteer.launch({
-      executablePath: EDGE_PATH,
+      executablePath: browserPath,
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
     });
@@ -76,7 +101,7 @@ async function runTests() {
     await page.goto('http://127.0.0.1:3000/games/reaction-test', { waitUntil: 'networkidle2' });
     await sleep(600);
     await page.tap('canvas');
-    await sleep(2400);
+    await sleep(2200);
     await page.tap('canvas');
     await sleep(400);
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '03_game_reaction_test.png') });
@@ -130,18 +155,25 @@ async function runTests() {
     console.log('✓ Merge Rush gameplay captured');
 
     // 9. Daily Challenge & Leaderboard
-    console.log('--- Testing Daily Challenge & Leaderboard ---');
+    console.log('--- Testing Daily Challenge ---');
     await page.goto('http://127.0.0.1:3000/daily', { waitUntil: 'networkidle2' });
     await sleep(600);
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '09_daily_challenge.png') });
 
+    console.log('--- Testing Global Leaderboards ---');
     await page.goto('http://127.0.0.1:3000/leaderboards', { waitUntil: 'networkidle2' });
     await sleep(600);
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '10_global_leaderboards.png') });
-    console.log('✓ Daily & Leaderboards captured');
+
+    // 10. Player Profile
+    console.log('--- Testing Player Profile ---');
+    await page.goto('http://127.0.0.1:3000/profile', { waitUntil: 'networkidle2' });
+    await sleep(600);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '11_player_profile.png') });
+    console.log('✓ Player Profile captured');
 
     await browser.close();
-    console.log('ALL TESTS COMPLETED SUCCESSFULLY!');
+    console.log('ALL E2E TESTS AND SCREENSHOTS COMPLETED SUCCESSFULLY!');
   } finally {
     console.log('Stopping server...');
     server.kill();

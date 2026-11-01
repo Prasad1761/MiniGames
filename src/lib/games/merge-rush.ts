@@ -1,6 +1,7 @@
 import { GameCallbacks, GameInstance } from '../types';
 import { sound } from '../audio';
 import { triggerHaptic } from '../player';
+import { TimerManager } from '@/game-engine/core/TimerManager';
 
 interface Tile {
   val: number;
@@ -11,7 +12,10 @@ export class MergeRushGame implements GameInstance {
   private ctx!: CanvasRenderingContext2D;
   private callbacks!: GameCallbacks;
   private running: boolean = false;
+  private paused: boolean = false;
   private animId: number = 0;
+
+  private timers: TimerManager = new TimerManager();
 
   private cw: number = 400;
   private ch: number = 600;
@@ -55,14 +59,26 @@ export class MergeRushGame implements GameInstance {
   }
 
   start(seed: number = 42) {
+    this.timers.clearAll();
     this.resize();
     this.running = true;
+    this.paused = false;
     this.score = 0;
     this.grid = Array.from({ length: this.rows }, () => Array(this.cols).fill(null));
     this.spawnNextVal();
 
     this.callbacks.onScoreUpdate(0);
     this.loop();
+  }
+
+  pause() {
+    this.paused = true;
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(true);
+  }
+
+  resume() {
+    this.paused = false;
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(false);
   }
 
   restart(seed?: number) {
@@ -78,7 +94,7 @@ export class MergeRushGame implements GameInstance {
 
   handleInput(type: 'tap' | 'press' | 'release' | 'move', clientX?: number, clientY?: number) {
     if (type !== 'tap' && type !== 'press') return;
-    if (!this.running || !clientX || !clientY) return;
+    if (!this.running || this.paused || !clientX || !clientY) return;
 
     const rect = this.canvas.getBoundingClientRect();
     const x = clientX - rect.left;
@@ -92,7 +108,6 @@ export class MergeRushGame implements GameInstance {
   }
 
   private dropIntoColumn(col: number) {
-    // Find bottom-most empty slot in this column
     let targetRow = -1;
     for (let r = this.rows - 1; r >= 0; r--) {
       if (!this.grid[r][col]) {
@@ -102,22 +117,19 @@ export class MergeRushGame implements GameInstance {
     }
 
     if (targetRow === -1) {
-      // Column overflow: Game Over!
       this.running = false;
       sound.playGameOver();
       triggerHaptic('heavy');
-      setTimeout(() => {
+      this.timers.setTimeout(() => {
         this.callbacks.onGameOver(this.score);
       }, 700);
       return;
     }
 
-    // Place tile
     this.grid[targetRow][col] = { val: this.nextVal };
     sound.playTap();
     triggerHaptic('light');
 
-    // Run merge cascades
     this.checkMerges(targetRow, col);
     this.spawnNextVal();
   }
@@ -126,19 +138,16 @@ export class MergeRushGame implements GameInstance {
     const current = this.grid[r][c];
     if (!current) return;
 
-    // Check below
     if (r + 1 < this.rows && this.grid[r + 1][c]?.val === current.val) {
       this.mergeTiles(r, c, r + 1, c);
       return;
     }
 
-    // Check left
     if (c > 0 && this.grid[r][c - 1]?.val === current.val) {
       this.mergeTiles(r, c, r, c - 1);
       return;
     }
 
-    // Check right
     if (c + 1 < this.cols && this.grid[r][c + 1]?.val === current.val) {
       this.mergeTiles(r, c, r, c + 1);
       return;
@@ -155,10 +164,7 @@ export class MergeRushGame implements GameInstance {
     sound.playPerfect(Math.min(7, Math.floor(Math.log2(newVal))));
     triggerHaptic('medium');
 
-    // Gravity pull down for empty slots
     this.applyGravity();
-
-    // Check if new position can cascade merge
     this.checkMerges(r2, c2);
   }
 
@@ -166,7 +172,6 @@ export class MergeRushGame implements GameInstance {
     for (let c = 0; c < this.cols; c++) {
       for (let r = this.rows - 1; r > 0; r--) {
         if (!this.grid[r][c]) {
-          // Find first tile above
           for (let above = r - 1; above >= 0; above--) {
             if (this.grid[above][c]) {
               this.grid[r][c] = this.grid[above][c];
@@ -180,7 +185,7 @@ export class MergeRushGame implements GameInstance {
   }
 
   private loop = () => {
-    if (!this.ctx) return;
+    if (!this.running) return;
     this.draw();
     this.animId = requestAnimationFrame(this.loop);
   };
@@ -192,13 +197,11 @@ export class MergeRushGame implements GameInstance {
     ctx.fillStyle = '#080A10';
     ctx.fillRect(0, 0, this.cw, this.ch);
 
-    // Score HUD
     ctx.textAlign = 'center';
     ctx.font = '900 44px Impact, sans-serif';
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText(String(this.score), this.cw / 2, 60);
 
-    // Incoming tile preview at top
     ctx.font = 'bold 12px sans-serif';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.fillText('NEXT TILE:', this.cw / 2, 90);
@@ -213,7 +216,6 @@ export class MergeRushGame implements GameInstance {
     ctx.font = '900 18px Impact, sans-serif';
     ctx.fillText(String(this.nextVal), this.cw / 2, 126);
 
-    // Draw Grid
     const startX = 16;
     const startY = 160;
     const colW = (this.cw - 32) / this.cols;
@@ -250,6 +252,7 @@ export class MergeRushGame implements GameInstance {
 
   destroy() {
     this.running = false;
+    this.timers.clearAll();
     if (this.animId) cancelAnimationFrame(this.animId);
   }
 }

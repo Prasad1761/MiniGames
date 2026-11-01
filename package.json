@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "test": "vitest run",
+    "test:e2e": "node scripts/test-and-capture.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -27,6 +29,8 @@
     "prisma": "^5.22.0",
     "puppeteer-core": "^25.16.0",
     "tailwindcss": "^3.4.15",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   }
 }

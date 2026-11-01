@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Volume2, VolumeX, Flame, Trophy, Calendar, User, Sparkles, Gamepad2 } from 'lucide-react';
+import { Volume2, VolumeX, Flame, Trophy, Calendar, User, Sparkles, Gamepad2, Award } from 'lucide-react';
 import { sound } from '@/lib/audio';
-import { getPlayerName, setPlayerName } from '@/lib/player';
+import { getPlayerName, setPlayerName, getOrCreatePlayerId } from '@/lib/player';
 
 export default function Navbar() {
   const [muted, setMuted] = useState(false);
@@ -23,18 +23,29 @@ export default function Navbar() {
     if (!next) sound.playTap();
   };
 
-  const handleSaveName = (e: React.FormEvent) => {
+  const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (nameInput.trim()) {
-      setPlayerName(nameInput.trim());
-      setUsername(nameInput.trim());
+    const clean = nameInput.trim();
+    if (clean) {
+      setPlayerName(clean);
+      setUsername(clean);
+      try {
+        const id = getOrCreatePlayerId();
+        await fetch('/api/profile', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ anonymousId: id, username: clean }),
+        });
+      } catch (e) {
+        // Local name is already set
+      }
     }
     setIsEditingName(false);
   };
 
   return (
     <>
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-black/60 border-b border-white/10 px-4 py-3">
+      <header className="sticky top-0 z-50 backdrop-blur-md bg-black/70 border-b border-white/10 px-4 py-3">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           {/* Brand Logo */}
           <Link href="/" className="flex items-center gap-2 group">
@@ -47,13 +58,13 @@ export default function Navbar() {
               <span className="font-black text-xl tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-pink-400 to-amber-300">
                 PULSE
               </span>
-              <span className="text-xs font-bold uppercase tracking-widest text-cyan-400 block -mt-1">
-                ARCADE
+              <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 block -mt-1 font-mono">
+                ARCADE V2
               </span>
             </div>
           </Link>
 
-          {/* Navigation Links */}
+          {/* Navigation Links (Desktop) */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-semibold">
             <Link
               href="/games"
@@ -76,10 +87,17 @@ export default function Navbar() {
               <Trophy className="w-4 h-4 text-amber-400" />
               Leaderboards
             </Link>
+            <Link
+              href="/profile"
+              className="text-gray-300 hover:text-purple-400 transition-colors flex items-center gap-1.5"
+            >
+              <Award className="w-4 h-4 text-purple-400" />
+              Profile
+            </Link>
           </nav>
 
           {/* Right Actions: Sound & Profile */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {/* Audio Toggle */}
             <button
               onClick={handleToggleSound}
@@ -93,20 +111,56 @@ export default function Navbar() {
               )}
             </button>
 
-            {/* Player Gamer Handle Chip */}
-            <button
-              onClick={() => {
-                setNameInput(username);
-                setIsEditingName(true);
-              }}
+            {/* Link to Profile Page */}
+            <Link
+              href="/profile"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-white/10 to-white/5 hover:from-white/15 hover:to-white/10 border border-white/10 text-xs font-bold text-gray-200 transition-all active:scale-95"
             >
               <User className="w-3.5 h-3.5 text-pink-400" />
               <span className="max-w-[110px] truncate">{username}</span>
-            </button>
+            </Link>
           </div>
         </div>
       </header>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0B0E14]/95 backdrop-blur-lg border-t border-white/10 px-2 py-2 flex items-center justify-around">
+        <Link
+          href="/"
+          className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-cyan-400 text-[10px] font-bold p-1"
+        >
+          <Gamepad2 className="w-4 h-4" />
+          <span>Home</span>
+        </Link>
+        <Link
+          href="/games"
+          className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-orange-400 text-[10px] font-bold p-1"
+        >
+          <Flame className="w-4 h-4 text-orange-400" />
+          <span>Games</span>
+        </Link>
+        <Link
+          href="/daily"
+          className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-pink-400 text-[10px] font-bold p-1"
+        >
+          <Calendar className="w-4 h-4 text-pink-400" />
+          <span>Daily</span>
+        </Link>
+        <Link
+          href="/leaderboards"
+          className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-amber-400 text-[10px] font-bold p-1"
+        >
+          <Trophy className="w-4 h-4 text-amber-400" />
+          <span>Ranks</span>
+        </Link>
+        <Link
+          href="/profile"
+          className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-purple-400 text-[10px] font-bold p-1"
+        >
+          <User className="w-4 h-4 text-purple-400" />
+          <span>Profile</span>
+        </Link>
+      </nav>
 
       {/* Edit Username Modal */}
       {isEditingName && (

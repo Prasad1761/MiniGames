@@ -32,6 +32,7 @@ export interface GameCallbacks {
   onGameOver: (finalScore: number, meta?: Record<string, any>) => void;
   onCombo?: (combo: number) => void;
   onMilestone?: (milestone: string) => void;
+  onPauseChange?: (isPaused: boolean) => void;
 }
 
 export interface PlayerProfile {
@@ -40,4 +41,5 @@ export interface PlayerProfile {
   highScores: Record<string, number>;
   soundEnabled: boolean;
   hapticsEnabled: boolean;
+  totalGamesPlayed: number;
 }

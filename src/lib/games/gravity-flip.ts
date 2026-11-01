@@ -2,6 +2,7 @@ import { GameCallbacks, GameInstance } from '../types';
 import { sound } from '../audio';
 import { triggerHaptic } from '../player';
 import { PRNG } from '../prng';
+import { TimerManager } from '@/game-engine/core/TimerManager';
 
 interface Obstacle {
   x: number;
@@ -36,30 +37,30 @@ export class GravityFlipGame implements GameInstance {
   private ctx!: CanvasRenderingContext2D;
   private callbacks!: GameCallbacks;
   private running: boolean = false;
+  private paused: boolean = false;
   private animId: number = 0;
+  private lastTime: number = 0;
 
-  // Screen metrics
+  private timers: TimerManager = new TimerManager();
+
   private cw: number = 400;
   private ch: number = 600;
 
-  // Corridor boundaries
   private floorY: number = 520;
   private ceilingY: number = 80;
   private corridorHeight: number = 440;
 
-  // Player state
   private playerX: number = 90;
   private playerY: number = 500;
   private playerSize: number = 24;
   private vy: number = 0;
-  private gravityDir: number = 1; // 1 = floor, -1 = ceiling
+  private gravityDir: number = 1;
   private gravityForce: number = 0.95;
   private terminalVelocity: number = 14;
   private playerRotation: number = 0;
   private onGround: boolean = true;
 
-  // Game progression
-  private scrollSpeed: number = 6;
+  private scrollSpeed: number = 5.5;
   private distance: number = 0;
   private score: number = 0;
   private obstacles: Obstacle[] = [];
@@ -92,8 +93,10 @@ export class GravityFlipGame implements GameInstance {
   }
 
   start(seed: number = 1337) {
+    this.timers.clearAll();
     this.resize();
     this.running = true;
+    this.paused = false;
     this.prng = new PRNG(seed);
     this.distance = 0;
     this.score = 0;
@@ -110,7 +113,20 @@ export class GravityFlipGame implements GameInstance {
     this.nextObstacleSpawnX = this.cw + 200;
 
     this.callbacks.onScoreUpdate(0);
-    this.loop();
+    this.lastTime = performance.now();
+    this.loop(this.lastTime);
+  }
+
+  pause() {
+    this.paused = true;
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(true);
+  }
+
+  resume() {
+    if (!this.running) return;
+    this.paused = false;
+    this.lastTime = performance.now();
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(false);
   }
 
   restart(seed?: number) {
@@ -120,21 +136,19 @@ export class GravityFlipGame implements GameInstance {
 
   handleInput(type: 'tap' | 'press' | 'release' | 'move') {
     if (type !== 'tap' && type !== 'press') return;
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
 
     this.flipGravity();
   }
 
   private flipGravity() {
-    // Flip direction!
     this.gravityDir *= -1;
-    this.vy = this.gravityDir * 4.5; // Initial push
+    this.vy = this.gravityDir * 4.5;
     this.onGround = false;
 
     sound.playGravityFlip();
     triggerHaptic('light');
 
-    // Trail burst
     for (let i = 0; i < 8; i++) {
       this.particles.push({
         x: this.playerX + this.playerSize / 2,
@@ -148,57 +162,58 @@ export class GravityFlipGame implements GameInstance {
     }
   }
 
-  private loop = () => {
-    if (!this.ctx) return;
-    this.update();
-    this.draw();
+  private loop = (currentTime: number) => {
+    if (!this.running) return;
+
+    if (!this.paused) {
+      const deltaMs = currentTime - this.lastTime;
+      const dt = Math.min(deltaMs / (1000 / 60), 2.5);
+      this.lastTime = currentTime;
+
+      this.update(dt);
+      this.draw();
+    } else {
+      this.lastTime = currentTime;
+    }
+
     this.animId = requestAnimationFrame(this.loop);
   };
 
-  private update() {
-    if (!this.running) return;
-
-    // Shake decay
+  private update(dt: number) {
     if (this.screenShake > 0) {
-      this.screenShake *= 0.88;
+      this.screenShake *= Math.pow(0.88, dt);
       if (this.screenShake < 0.1) this.screenShake = 0;
     }
 
-    // Advance speed & distance
     this.scrollSpeed = Math.min(5.5 + this.score * 0.04, 11);
-    this.distance += this.scrollSpeed;
+    this.distance += this.scrollSpeed * dt;
     const currentMeters = Math.floor(this.distance / 25);
     if (currentMeters > this.score) {
       this.score = currentMeters;
       this.callbacks.onScoreUpdate(this.score);
     }
 
-    // Apply gravity
-    this.vy += this.gravityForce * this.gravityDir;
+    this.vy += this.gravityForce * this.gravityDir * dt;
     if (Math.abs(this.vy) > this.terminalVelocity) {
       this.vy = Math.sign(this.vy) * this.terminalVelocity;
     }
-    this.playerY += this.vy;
+    this.playerY += this.vy * dt;
 
-    // Floor collision
     if (this.gravityDir === 1 && this.playerY >= this.floorY - this.playerSize) {
       this.playerY = this.floorY - this.playerSize;
       this.vy = 0;
       this.onGround = true;
       this.playerRotation = 0;
-    }
-    // Ceiling collision
-    else if (this.gravityDir === -1 && this.playerY <= this.ceilingY) {
+    } else if (this.gravityDir === -1 && this.playerY <= this.ceilingY) {
       this.playerY = this.ceilingY;
       this.vy = 0;
       this.onGround = true;
       this.playerRotation = Math.PI;
     } else {
       this.onGround = false;
-      this.playerRotation += this.gravityDir * 0.12;
+      this.playerRotation += this.gravityDir * 0.12 * dt;
     }
 
-    // Player running particle trail
     if (Math.random() > 0.3) {
       this.particles.push({
         x: this.playerX,
@@ -211,13 +226,11 @@ export class GravityFlipGame implements GameInstance {
       });
     }
 
-    // Spawn obstacles
     if (this.nextObstacleSpawnX <= this.cw + 100) {
       this.spawnProceduralObstacle();
     }
-    this.nextObstacleSpawnX -= this.scrollSpeed;
+    this.nextObstacleSpawnX -= this.scrollSpeed * dt;
 
-    // Update and collide obstacles
     const playerBox = {
       x: this.playerX + 3,
       y: this.playerY + 3,
@@ -227,9 +240,8 @@ export class GravityFlipGame implements GameInstance {
 
     for (let i = this.obstacles.length - 1; i >= 0; i--) {
       const obs = this.obstacles[i];
-      obs.x -= this.scrollSpeed;
+      obs.x -= this.scrollSpeed * dt;
 
-      // Check collision
       const collides =
         playerBox.x < obs.x + obs.width &&
         playerBox.x + playerBox.width > obs.x &&
@@ -241,7 +253,6 @@ export class GravityFlipGame implements GameInstance {
         return;
       }
 
-      // Near-miss detection (bonus points!)
       if (!obs.nearMissAwarded && obs.x + obs.width < this.playerX) {
         const distY = Math.abs(this.playerY - obs.y);
         if (distY < 45) {
@@ -259,29 +270,26 @@ export class GravityFlipGame implements GameInstance {
         }
       }
 
-      // Cleanup
       if (obs.x + obs.width < -50) {
         this.obstacles.splice(i, 1);
       }
     }
 
-    // Update particles
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.alpha -= 0.03;
-      p.size *= 0.96;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.alpha -= 0.03 * dt;
+      p.size *= Math.pow(0.96, dt);
       if (p.alpha <= 0 || p.size <= 0.4) {
         this.particles.splice(i, 1);
       }
     }
 
-    // Update floating texts
     for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
       const ft = this.floatingTexts[i];
-      ft.y -= 1.2;
-      ft.alpha -= 0.025;
+      ft.y -= 1.2 * dt;
+      ft.alpha -= 0.025 * dt;
       if (ft.alpha <= 0) {
         this.floatingTexts.splice(i, 1);
       }
@@ -321,7 +329,6 @@ export class GravityFlipGame implements GameInstance {
         nearMissAwarded: false,
       });
     } else {
-      // Floating laser barrier in middle
       const barrierH = 55;
       const barrierY = this.ceilingY + (this.corridorHeight - barrierH) / 2;
       this.obstacles.push({
@@ -335,7 +342,6 @@ export class GravityFlipGame implements GameInstance {
       });
     }
 
-    // Spacing between obstacles
     const minSpacing = Math.max(160, 280 - this.score * 1.5);
     const maxSpacing = Math.max(220, 380 - this.score * 1.5);
     this.nextObstacleSpawnX = spawnX + this.prng.range(minSpacing, maxSpacing);
@@ -347,7 +353,6 @@ export class GravityFlipGame implements GameInstance {
     triggerHaptic('heavy');
     this.screenShake = 16;
 
-    // Shatter player into shards
     for (let i = 0; i < 30; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 2 + Math.random() * 7;
@@ -362,7 +367,7 @@ export class GravityFlipGame implements GameInstance {
       });
     }
 
-    setTimeout(() => {
+    this.timers.setTimeout(() => {
       this.callbacks.onGameOver(this.score, {
         distance: Math.floor(this.distance),
         speed: this.scrollSpeed.toFixed(1),
@@ -376,14 +381,12 @@ export class GravityFlipGame implements GameInstance {
 
     ctx.save();
 
-    // Screen shake
     if (this.screenShake > 0) {
       const dx = (Math.random() - 0.5) * this.screenShake;
       const dy = (Math.random() - 0.5) * this.screenShake;
       ctx.translate(dx, dy);
     }
 
-    // Corridor Background
     const bgGrad = ctx.createLinearGradient(0, this.ceilingY, 0, this.floorY);
     bgGrad.addColorStop(0, '#0a0d15');
     bgGrad.addColorStop(0.5, '#0e1320');
@@ -391,12 +394,10 @@ export class GravityFlipGame implements GameInstance {
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, this.cw, this.ch);
 
-    // Corridor top/bottom boundaries (Neon Rails)
     ctx.fillStyle = '#171d2b';
     ctx.fillRect(0, 0, this.cw, this.ceilingY);
     ctx.fillRect(0, this.floorY, this.cw, this.ch - this.floorY);
 
-    // Top neon rail
     ctx.strokeStyle = '#00F0FF';
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -404,14 +405,12 @@ export class GravityFlipGame implements GameInstance {
     ctx.lineTo(this.cw, this.ceilingY);
     ctx.stroke();
 
-    // Bottom neon rail
     ctx.strokeStyle = '#00FFA3';
     ctx.beginPath();
     ctx.moveTo(0, this.floorY);
     ctx.lineTo(this.cw, this.floorY);
     ctx.stroke();
 
-    // Background scrolling grid lines
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
     ctx.lineWidth = 1;
     const gridOffset = -(this.distance % 40);
@@ -422,7 +421,6 @@ export class GravityFlipGame implements GameInstance {
       ctx.stroke();
     }
 
-    // Draw Particles
     for (const p of this.particles) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, p.alpha);
@@ -431,11 +429,9 @@ export class GravityFlipGame implements GameInstance {
       ctx.restore();
     }
 
-    // Draw Obstacles
     for (const obs of this.obstacles) {
       ctx.save();
       if (obs.type === 'spike-floor') {
-        // Neon red/pink triangle spike pointing up
         ctx.fillStyle = '#FF007A';
         ctx.shadowColor = '#FF007A';
         ctx.shadowBlur = 8;
@@ -446,7 +442,6 @@ export class GravityFlipGame implements GameInstance {
         ctx.closePath();
         ctx.fill();
       } else if (obs.type === 'spike-ceiling') {
-        // Spike pointing down
         ctx.fillStyle = '#FF007A';
         ctx.shadowColor = '#FF007A';
         ctx.shadowBlur = 8;
@@ -457,39 +452,33 @@ export class GravityFlipGame implements GameInstance {
         ctx.closePath();
         ctx.fill();
       } else {
-        // Glowing laser barrier
         ctx.fillStyle = '#FFE600';
         ctx.shadowColor = '#FFE600';
         ctx.shadowBlur = 10;
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
 
-        // Core line
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(obs.x + 8, obs.y, 6, obs.height);
       }
       ctx.restore();
     }
 
-    // Draw Player (if still alive)
     if (this.running) {
       ctx.save();
       ctx.translate(this.playerX + this.playerSize / 2, this.playerY + this.playerSize / 2);
       ctx.rotate(this.playerRotation);
 
-      // Neon body
       ctx.fillStyle = '#00FFA3';
       ctx.shadowColor = '#00FFA3';
       ctx.shadowBlur = 12;
       ctx.fillRect(-this.playerSize / 2, -this.playerSize / 2, this.playerSize, this.playerSize);
 
-      // Inner core
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(-this.playerSize / 4, -this.playerSize / 4, this.playerSize / 2, this.playerSize / 2);
 
       ctx.restore();
     }
 
-    // Draw Floating Texts
     for (const ft of this.floatingTexts) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, ft.alpha);
@@ -502,9 +491,8 @@ export class GravityFlipGame implements GameInstance {
       ctx.restore();
     }
 
-    ctx.restore(); // Undo shake
+    ctx.restore();
 
-    // Score HUD
     ctx.font = '900 44px Impact, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
@@ -519,6 +507,7 @@ export class GravityFlipGame implements GameInstance {
 
   destroy() {
     this.running = false;
+    this.timers.clearAll();
     if (this.animId) {
       cancelAnimationFrame(this.animId);
       this.animId = 0;

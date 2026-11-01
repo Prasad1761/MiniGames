@@ -1,6 +1,7 @@
 import { GameCallbacks, GameInstance } from '../types';
 import { sound } from '../audio';
 import { triggerHaptic } from '../player';
+import { TimerManager } from '@/game-engine/core/TimerManager';
 
 interface Block {
   x: number;
@@ -47,7 +48,11 @@ export class PerfectStackGame implements GameInstance {
   private ctx!: CanvasRenderingContext2D;
   private callbacks!: GameCallbacks;
   private running: boolean = false;
+  private paused: boolean = false;
   private animId: number = 0;
+  private lastTime: number = 0;
+
+  private timers: TimerManager = new TimerManager();
 
   private stack: Block[] = [];
   private currentBlock: Block | null = null;
@@ -55,7 +60,7 @@ export class PerfectStackGame implements GameInstance {
   private particles: Particle[] = [];
   private floatingTexts: FloatingText[] = [];
 
-  private currentDirection: number = 1; // 1: moving right, -1: moving left
+  private currentDirection: number = 1; // 1: right, -1: left
   private speed: number = 3.5;
   private baseSpeed: number = 3.5;
   private blockHeight: number = 24;
@@ -66,7 +71,6 @@ export class PerfectStackGame implements GameInstance {
   private screenShake: number = 0;
   private hueBase: number = 200;
 
-  // Visual layout constants
   private cw: number = 400;
   private ch: number = 600;
 
@@ -89,12 +93,14 @@ export class PerfectStackGame implements GameInstance {
   }
 
   start(seed: number = 42) {
+    this.timers.clearAll();
     this.resize();
     this.running = true;
+    this.paused = false;
     this.score = 0;
     this.combo = 0;
     this.speed = this.baseSpeed;
-    this.hueBase = (seed % 360);
+    this.hueBase = Math.abs(seed) % 360;
     this.slicedPieces = [];
     this.particles = [];
     this.floatingTexts = [];
@@ -105,7 +111,6 @@ export class PerfectStackGame implements GameInstance {
     const initialWidth = Math.min(this.cw * 0.6, 200);
     const startY = this.ch - 80;
 
-    // Base block
     const baseBlock: Block = {
       x: (this.cw - initialWidth) / 2,
       y: startY,
@@ -118,7 +123,20 @@ export class PerfectStackGame implements GameInstance {
     this.spawnNextBlock();
 
     this.callbacks.onScoreUpdate(0);
-    this.loop();
+    this.lastTime = performance.now();
+    this.loop(this.lastTime);
+  }
+
+  pause() {
+    this.paused = true;
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(true);
+  }
+
+  resume() {
+    if (!this.running) return;
+    this.paused = false;
+    this.lastTime = performance.now();
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(false);
   }
 
   restart(seed?: number) {
@@ -142,7 +160,6 @@ export class PerfectStackGame implements GameInstance {
       color: `hsl(${hue}, 85%, 60%)`,
     };
 
-    // Camera target scrolls up as stack grows
     const visibleThreshold = this.ch * 0.55;
     if (this.currentBlock.y < visibleThreshold) {
       this.targetCameraY = visibleThreshold - this.currentBlock.y;
@@ -151,7 +168,7 @@ export class PerfectStackGame implements GameInstance {
 
   handleInput(type: 'tap' | 'press' | 'release' | 'move') {
     if (type !== 'tap' && type !== 'press') return;
-    if (!this.running || !this.currentBlock) return;
+    if (!this.running || this.paused || !this.currentBlock) return;
 
     this.dropBlock();
   }
@@ -163,23 +180,19 @@ export class PerfectStackGame implements GameInstance {
     const diff = curr.x - prev.x;
     const absDiff = Math.abs(diff);
 
-    // Tolerance for "PERFECT" hit
     const PERFECT_THRESHOLD = 3.5;
 
     if (absDiff <= PERFECT_THRESHOLD) {
-      // --- PERFECT PLACEMENT ---
-      curr.x = prev.x; // Snap
+      // PERFECT HIT
+      curr.x = prev.x;
       this.combo++;
       this.score++;
 
       sound.playPerfect(this.combo);
       triggerHaptic('medium');
       this.screenShake = Math.min(this.screenShake + 5, 12);
-
-      // Spawn celebration particles
       this.spawnSparks(curr.x + curr.width / 2, curr.y + curr.height / 2, curr.color);
 
-      // Float text
       const comboText = this.combo > 1 ? `PERFECT x${this.combo}!` : 'PERFECT!';
       this.floatingTexts.push({
         text: comboText,
@@ -190,12 +203,11 @@ export class PerfectStackGame implements GameInstance {
         scale: 1.2,
       });
 
-      // Bonus block recovery on big streaks
       if (this.combo > 0 && this.combo % 5 === 0) {
         curr.width = Math.min(curr.width + 12, this.cw * 0.7);
         curr.x = Math.max(0, curr.x - 6);
         this.floatingTexts.push({
-          text: '+WIDTH BONUS!',
+          text: '+RECOVERY BONUS!',
           x: curr.x + curr.width / 2,
           y: curr.y - 35,
           color: '#FFE600',
@@ -211,34 +223,32 @@ export class PerfectStackGame implements GameInstance {
       this.spawnNextBlock();
 
     } else if (absDiff < prev.width) {
-      // --- PARTIAL HIT: SLICE OFF OVERHANG ---
+      // PARTIAL HIT
       this.combo = 0;
       this.score++;
 
-      let newWidth = prev.width - absDiff;
-      let placedX = diff > 0 ? curr.x : prev.x;
-      let sliceX = diff > 0 ? curr.x + newWidth : curr.x;
-      let sliceWidth = absDiff;
+      const newWidth = prev.width - absDiff;
+      const placedX = diff > 0 ? curr.x : prev.x;
+      const sliceX = diff > 0 ? curr.x + newWidth : curr.x;
+      const sliceWidth = absDiff;
 
       sound.playSlice();
       triggerHaptic('light');
 
-      // Place the trimmed block
       curr.x = placedX;
       curr.width = newWidth;
       this.stack.push(curr);
 
-      // Create sliced physics falling piece
       this.slicedPieces.push({
         x: sliceX,
         y: curr.y,
         width: sliceWidth,
         height: curr.height,
         color: curr.color,
-        vx: diff > 0 ? 2 : -2,
+        vx: diff > 0 ? 2.5 : -2.5,
         vy: 1,
         rotation: 0,
-        vRot: (diff > 0 ? 0.05 : -0.05),
+        vRot: diff > 0 ? 0.05 : -0.05,
         opacity: 1,
       });
 
@@ -247,13 +257,12 @@ export class PerfectStackGame implements GameInstance {
       this.spawnNextBlock();
 
     } else {
-      // --- COMPLETE MISS: GAME OVER ---
+      // COMPLETE MISS
       this.running = false;
       sound.playGameOver();
       triggerHaptic('heavy');
       this.screenShake = 15;
 
-      // Entire block drops
       this.slicedPieces.push({
         x: curr.x,
         y: curr.y,
@@ -269,7 +278,8 @@ export class PerfectStackGame implements GameInstance {
 
       this.currentBlock = null;
 
-      setTimeout(() => {
+      // Safe managed timeout
+      this.timers.setTimeout(() => {
         this.callbacks.onGameOver(this.score, { combo: this.combo, height: this.stack.length });
       }, 700);
     }
@@ -291,26 +301,34 @@ export class PerfectStackGame implements GameInstance {
     }
   }
 
-  private loop = () => {
-    if (!this.ctx) return;
-    this.update();
-    this.draw();
+  private loop = (currentTime: number) => {
+    if (!this.running) return;
+
+    if (!this.paused) {
+      const deltaMs = currentTime - this.lastTime;
+      // Normalized delta-time (1.0 = 60 FPS standard)
+      const dt = Math.min(deltaMs / (1000 / 60), 2.5);
+      this.lastTime = currentTime;
+
+      this.update(dt);
+      this.draw();
+    } else {
+      this.lastTime = currentTime;
+    }
+
     this.animId = requestAnimationFrame(this.loop);
   };
 
-  private update() {
-    // Smooth camera interpolation
-    this.cameraY += (this.targetCameraY - this.cameraY) * 0.1;
+  private update(dt: number) {
+    this.cameraY += (this.targetCameraY - this.cameraY) * Math.min(1, 0.1 * dt);
 
-    // Screen shake decay
     if (this.screenShake > 0) {
-      this.screenShake *= 0.88;
+      this.screenShake *= Math.pow(0.88, dt);
       if (this.screenShake < 0.1) this.screenShake = 0;
     }
 
-    // Move current sliding block
     if (this.running && this.currentBlock) {
-      this.currentBlock.x += this.speed * this.currentDirection;
+      this.currentBlock.x += this.speed * this.currentDirection * dt;
       const boundRight = this.cw - this.currentBlock.width;
 
       if (this.currentBlock.x >= boundRight + 40) {
@@ -322,39 +340,36 @@ export class PerfectStackGame implements GameInstance {
       }
     }
 
-    // Update falling sliced pieces
     for (let i = this.slicedPieces.length - 1; i >= 0; i--) {
       const p = this.slicedPieces[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vy += 0.55; // Gravity
-      p.rotation += p.vRot;
-      p.opacity -= 0.012;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 0.55 * dt;
+      p.rotation += p.vRot * dt;
+      p.opacity -= 0.012 * dt;
 
       if (p.opacity <= 0 || p.y - this.cameraY > this.ch + 100) {
         this.slicedPieces.splice(i, 1);
       }
     }
 
-    // Update particles
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const pt = this.particles[i];
-      pt.x += pt.vx;
-      pt.y += pt.vy;
-      pt.vy += 0.15;
-      pt.alpha -= 0.025;
-      pt.size *= 0.96;
+      pt.x += pt.vx * dt;
+      pt.y += pt.vy * dt;
+      pt.vy += 0.15 * dt;
+      pt.alpha -= 0.025 * dt;
+      pt.size *= Math.pow(0.96, dt);
 
       if (pt.alpha <= 0 || pt.size <= 0.5) {
         this.particles.splice(i, 1);
       }
     }
 
-    // Update floating texts
     for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
       const ft = this.floatingTexts[i];
-      ft.y -= 1.2;
-      ft.alpha -= 0.02;
+      ft.y -= 1.2 * dt;
+      ft.alpha -= 0.02 * dt;
       if (ft.alpha <= 0) {
         this.floatingTexts.splice(i, 1);
       }
@@ -367,21 +382,18 @@ export class PerfectStackGame implements GameInstance {
 
     ctx.save();
 
-    // Screen shake transform
     if (this.screenShake > 0) {
       const dx = (Math.random() - 0.5) * this.screenShake;
       const dy = (Math.random() - 0.5) * this.screenShake;
       ctx.translate(dx, dy);
     }
 
-    // Subtle background grid & gradient glow
     const grad = ctx.createLinearGradient(0, 0, 0, this.ch);
     grad.addColorStop(0, '#0d111a');
     grad.addColorStop(1, '#080a0f');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, this.cw, this.ch);
 
-    // Atmospheric neon backdrop bloom
     const bloomGrad = ctx.createRadialGradient(
       this.cw / 2, this.ch / 2, 20,
       this.cw / 2, this.ch / 2, this.cw * 0.7
@@ -391,25 +403,20 @@ export class PerfectStackGame implements GameInstance {
     ctx.fillStyle = bloomGrad;
     ctx.fillRect(0, 0, this.cw, this.ch);
 
-    // Apply Camera offset
     ctx.save();
     ctx.translate(0, this.cameraY);
 
-    // Draw stacked blocks
     for (let i = 0; i < this.stack.length; i++) {
       const b = this.stack[i];
-      // Only draw if within viewport
       if (b.y + this.cameraY < this.ch + 50 && b.y + this.cameraY > -100) {
         this.drawBlock(b);
       }
     }
 
-    // Draw active moving block
     if (this.currentBlock) {
       this.drawBlock(this.currentBlock, true);
     }
 
-    // Draw falling sliced pieces
     for (const p of this.slicedPieces) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, p.opacity);
@@ -420,7 +427,6 @@ export class PerfectStackGame implements GameInstance {
       ctx.restore();
     }
 
-    // Draw sparks/particles
     for (const pt of this.particles) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, pt.alpha);
@@ -431,7 +437,6 @@ export class PerfectStackGame implements GameInstance {
       ctx.restore();
     }
 
-    // Draw floating texts
     for (const ft of this.floatingTexts) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, ft.alpha);
@@ -444,9 +449,8 @@ export class PerfectStackGame implements GameInstance {
       ctx.restore();
     }
 
-    ctx.restore(); // Undo camera translate
+    ctx.restore();
 
-    // Draw live score HUD overlay
     ctx.font = '900 48px Impact, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
@@ -469,23 +473,18 @@ export class PerfectStackGame implements GameInstance {
     const ctx = this.ctx;
     ctx.save();
 
-    // Block shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
     ctx.fillRect(b.x + 3, b.y + 4, b.width, b.height);
 
-    // Main block face
     ctx.fillStyle = b.color;
     ctx.fillRect(b.x, b.y, b.width, b.height);
 
-    // 3D Bevel highlight on top edge
     ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.fillRect(b.x, b.y, b.width, 3);
 
-    // 3D Bevel shadow on bottom edge
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.fillRect(b.x, b.y + b.height - 3, b.width, 3);
 
-    // Active block glow
     if (isActive) {
       ctx.strokeStyle = '#FFFFFF';
       ctx.lineWidth = 1.5;
@@ -497,6 +496,7 @@ export class PerfectStackGame implements GameInstance {
 
   destroy() {
     this.running = false;
+    this.timers.clearAll();
     if (this.animId) {
       cancelAnimationFrame(this.animId);
       this.animId = 0;

@@ -1,6 +1,6 @@
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -8,30 +8,49 @@ generator client {
 }
 
 model Player {
-  id           String      @id @default(uuid())
-  anonymousId  String      @unique
-  username     String      @default("ArcadePlayer")
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id           String        @id @default(uuid())
+  anonymousId  String        @unique
+  username     String        @default("ArcadePlayer")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   scores       Score[]
-  challenges   Challenge[] @relation("CreatorChallenges")
+  challenges   Challenge[]   @relation("CreatorChallenges")
+  runSessions  RunSession[]
 
   @@index([anonymousId])
 }
 
-model Score {
+model RunSession {
   id          String   @id @default(uuid())
   gameId      String
-  score       Int
-  meta        String?  // JSON with extra info e.g. ms, combo, accuracy
   playerId    String
   player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  isDaily     Boolean  @default(false)
-  dailyDate   String?  // YYYY-MM-DD
+  seed        Int      @default(42)
+  startedAt   DateTime @default(now())
+  expiresAt   DateTime
+  completed   Boolean  @default(false)
+  scores      Score[]
+
+  @@index([playerId, gameId])
+}
+
+model Score {
+  id           String      @id @default(uuid())
+  gameId       String
+  score        Int
+  durationMs   Int?
+  meta         String?     // JSON with extra info e.g. ms, combo, accuracy
+  playerId     String
+  player       Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  runSessionId String?
+  runSession   RunSession? @relation(fields: [runSessionId], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
+  isDaily      Boolean     @default(false)
+  dailyDate    String?     // YYYY-MM-DD
 
   @@index([gameId, score(sort: Desc)])
   @@index([gameId, dailyDate, score(sort: Desc)])
+  @@index([playerId, gameId])
 }
 
 model Challenge {
@@ -42,5 +61,8 @@ model Challenge {
   creator     Player    @relation("CreatorChallenges", fields: [creatorId], references: [id], onDelete: Cascade)
   seed        Int       @default(42)
   createdAt   DateTime  @default(now())
-  expiresAt   DateTime?
+  expiresAt   DateTime
+
+  @@index([creatorId])
+  @@index([expiresAt])
 }

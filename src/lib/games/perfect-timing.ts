@@ -1,23 +1,26 @@
 import { GameCallbacks, GameInstance } from '../types';
 import { sound } from '../audio';
 import { triggerHaptic } from '../player';
+import { TimerManager } from '@/game-engine/core/TimerManager';
 
 export class PerfectTimingGame implements GameInstance {
   private canvas!: HTMLCanvasElement;
   private ctx!: CanvasRenderingContext2D;
   private callbacks!: GameCallbacks;
   private running: boolean = false;
+  private paused: boolean = false;
   private animId: number = 0;
+  private lastTime: number = 0;
+
+  private timers: TimerManager = new TimerManager();
 
   private cw: number = 400;
   private ch: number = 600;
 
-  // Meter oscillation state
-  private indicatorPos: number = 0; // 0 to 1
+  private indicatorPos: number = 0;
   private indicatorDir: number = 1;
   private speed: number = 0.022;
 
-  // Target zone boundaries (0 to 1)
   private targetCenter: number = 0.5;
   private targetHalfWidth: number = 0.12;
 
@@ -44,8 +47,10 @@ export class PerfectTimingGame implements GameInstance {
   }
 
   start(seed: number = 42) {
+    this.timers.clearAll();
     this.resize();
     this.running = true;
+    this.paused = false;
     this.score = 0;
     this.combo = 0;
     this.speed = 0.022;
@@ -56,7 +61,20 @@ export class PerfectTimingGame implements GameInstance {
     this.screenShake = 0;
 
     this.callbacks.onScoreUpdate(0);
-    this.loop();
+    this.lastTime = performance.now();
+    this.loop(this.lastTime);
+  }
+
+  pause() {
+    this.paused = true;
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(true);
+  }
+
+  resume() {
+    if (!this.running) return;
+    this.paused = false;
+    this.lastTime = performance.now();
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(false);
   }
 
   restart(seed?: number) {
@@ -66,15 +84,13 @@ export class PerfectTimingGame implements GameInstance {
 
   handleInput(type: 'tap' | 'press' | 'release' | 'move') {
     if (type !== 'tap' && type !== 'press') return;
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
 
     const diff = Math.abs(this.indicatorPos - this.targetCenter);
 
     if (diff <= this.targetHalfWidth) {
-      // Hit inside target!
       this.score++;
 
-      // Bullseye precision check (< 20% of target width)
       const isBullseye = diff <= this.targetHalfWidth * 0.25;
 
       if (isBullseye) {
@@ -90,14 +106,10 @@ export class PerfectTimingGame implements GameInstance {
 
       this.callbacks.onScoreUpdate(this.score);
 
-      // Increase speed & shrink target slightly
       this.speed = Math.min(0.022 + this.score * 0.0016, 0.055);
       this.targetHalfWidth = Math.max(0.045, 0.12 - this.score * 0.0035);
-
-      // Randomize next target position across 0.25 to 0.75
       this.targetCenter = 0.25 + Math.random() * 0.5;
     } else {
-      // Missed target zone
       this.onMiss();
     }
   }
@@ -108,22 +120,30 @@ export class PerfectTimingGame implements GameInstance {
     triggerHaptic('heavy');
     this.screenShake = 14;
 
-    setTimeout(() => {
+    this.timers.setTimeout(() => {
       this.callbacks.onGameOver(this.score, { combo: this.combo });
     }, 700);
   }
 
-  private loop = () => {
-    if (!this.ctx) return;
-    this.update();
-    this.draw();
+  private loop = (currentTime: number) => {
+    if (!this.running) return;
+
+    if (!this.paused) {
+      const deltaMs = currentTime - this.lastTime;
+      const dt = Math.min(deltaMs / (1000 / 60), 2.5);
+      this.lastTime = currentTime;
+
+      this.update(dt);
+      this.draw();
+    } else {
+      this.lastTime = currentTime;
+    }
+
     this.animId = requestAnimationFrame(this.loop);
   };
 
-  private update() {
-    if (!this.running) return;
-
-    this.indicatorPos += this.speed * this.indicatorDir;
+  private update(dt: number) {
+    this.indicatorPos += this.speed * this.indicatorDir * dt;
 
     if (this.indicatorPos >= 1) {
       this.indicatorPos = 1;
@@ -134,7 +154,7 @@ export class PerfectTimingGame implements GameInstance {
     }
 
     if (this.screenShake > 0) {
-      this.screenShake *= 0.88;
+      this.screenShake *= Math.pow(0.88, dt);
       if (this.screenShake < 0.1) this.screenShake = 0;
     }
   }
@@ -148,11 +168,9 @@ export class PerfectTimingGame implements GameInstance {
       ctx.translate((Math.random() - 0.5) * this.screenShake, (Math.random() - 0.5) * this.screenShake);
     }
 
-    // Background
     ctx.fillStyle = '#080B12';
     ctx.fillRect(0, 0, this.cw, this.ch);
 
-    // Score HUD
     ctx.textAlign = 'center';
     ctx.font = '900 52px Impact, sans-serif';
     ctx.fillStyle = '#FFFFFF';
@@ -166,13 +184,11 @@ export class PerfectTimingGame implements GameInstance {
       ctx.fillText(`PERFECT BULLSEYE x${this.combo}`, this.cw / 2, 115);
     }
 
-    // Arc / Linear Meter Gauge
     const meterX = 40;
     const meterY = this.ch / 2 - 20;
     const meterW = this.cw - 80;
     const meterH = 40;
 
-    // Meter track background
     ctx.fillStyle = '#121724';
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
     ctx.lineWidth = 3;
@@ -181,21 +197,18 @@ export class PerfectTimingGame implements GameInstance {
     ctx.fill();
     ctx.stroke();
 
-    // Target Zone
     const tzLeft = meterX + (this.targetCenter - this.targetHalfWidth) * meterW;
     const tzW = this.targetHalfWidth * 2 * meterW;
 
     ctx.fillStyle = 'rgba(0, 255, 163, 0.35)';
     ctx.fillRect(tzLeft, meterY + 3, tzW, meterH - 6);
 
-    // Bullseye center line
     const bullseyeX = meterX + this.targetCenter * meterW;
     ctx.fillStyle = '#FFE600';
     ctx.shadowColor = '#FFE600';
     ctx.shadowBlur = 8;
     ctx.fillRect(bullseyeX - 3, meterY, 6, meterH);
 
-    // Sweeping Needle Indicator
     const needleX = meterX + this.indicatorPos * meterW;
     ctx.fillStyle = '#00F0FF';
     ctx.shadowColor = '#00F0FF';
@@ -204,7 +217,6 @@ export class PerfectTimingGame implements GameInstance {
     ctx.roundRect(needleX - 4, meterY - 14, 8, meterH + 28, 4);
     ctx.fill();
 
-    // Guidance text
     ctx.shadowBlur = 0;
     ctx.font = 'bold 14px sans-serif';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
@@ -215,6 +227,7 @@ export class PerfectTimingGame implements GameInstance {
 
   destroy() {
     this.running = false;
+    this.timers.clearAll();
     if (this.animId) cancelAnimationFrame(this.animId);
   }
 }

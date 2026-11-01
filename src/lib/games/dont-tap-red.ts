@@ -1,6 +1,7 @@
 import { GameCallbacks, GameInstance } from '../types';
 import { sound } from '../audio';
 import { triggerHaptic } from '../player';
+import { TimerManager } from '@/game-engine/core/TimerManager';
 
 interface GridTile {
   row: number;
@@ -14,7 +15,11 @@ export class DontTapRedGame implements GameInstance {
   private ctx!: CanvasRenderingContext2D;
   private callbacks!: GameCallbacks;
   private running: boolean = false;
+  private paused: boolean = false;
   private animId: number = 0;
+  private lastTime: number = 0;
+
+  private timers: TimerManager = new TimerManager();
 
   private cw: number = 400;
   private ch: number = 600;
@@ -22,7 +27,7 @@ export class DontTapRedGame implements GameInstance {
   private numCols: number = 4;
   private rowHeight: number = 135;
   private scrollY: number = 0;
-  private speed: number = 3.5;
+  private speed: number = 3.2;
   private score: number = 0;
   private combo: number = 0;
   private nextRowIndex: number = 0;
@@ -48,8 +53,10 @@ export class DontTapRedGame implements GameInstance {
   }
 
   start(seed: number = 42) {
+    this.timers.clearAll();
     this.resize();
     this.running = true;
+    this.paused = false;
     this.score = 0;
     this.combo = 0;
     this.speed = 3.2;
@@ -58,13 +65,25 @@ export class DontTapRedGame implements GameInstance {
     this.nextRowIndex = 0;
     this.screenShake = 0;
 
-    // Spawn initial 6 rows
     for (let r = 0; r < 6; r++) {
       this.spawnRow();
     }
 
     this.callbacks.onScoreUpdate(0);
-    this.loop();
+    this.lastTime = performance.now();
+    this.loop(this.lastTime);
+  }
+
+  pause() {
+    this.paused = true;
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(true);
+  }
+
+  resume() {
+    if (!this.running) return;
+    this.paused = false;
+    this.lastTime = performance.now();
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(false);
   }
 
   restart(seed?: number) {
@@ -94,7 +113,7 @@ export class DontTapRedGame implements GameInstance {
 
   handleInput(type: 'tap' | 'press' | 'release' | 'move', clientX?: number, clientY?: number) {
     if (type !== 'tap' && type !== 'press') return;
-    if (!this.running || !clientX || !clientY) return;
+    if (!this.running || this.paused || !clientX || !clientY) return;
 
     const rect = this.canvas.getBoundingClientRect();
     const x = clientX - rect.left;
@@ -103,7 +122,6 @@ export class DontTapRedGame implements GameInstance {
     const colW = this.cw / this.numCols;
     const clickedCol = Math.floor(x / colW);
 
-    // Find tile that intersects clicked Y
     for (const r of this.rows) {
       const rowY = this.ch - (r.rowIndex * this.rowHeight - this.scrollY);
       if (y >= rowY - this.rowHeight && y <= rowY) {
@@ -132,30 +150,36 @@ export class DontTapRedGame implements GameInstance {
     triggerHaptic('heavy');
     this.screenShake = 15;
 
-    setTimeout(() => {
+    this.timers.setTimeout(() => {
       this.callbacks.onGameOver(this.score, { combo: this.combo, reason });
     }, 700);
   }
 
-  private loop = () => {
-    if (!this.ctx) return;
-    this.update();
-    this.draw();
+  private loop = (currentTime: number) => {
+    if (!this.running) return;
+
+    if (!this.paused) {
+      const deltaMs = currentTime - this.lastTime;
+      const dt = Math.min(deltaMs / (1000 / 60), 2.5);
+      this.lastTime = currentTime;
+
+      this.update(dt);
+      this.draw();
+    } else {
+      this.lastTime = currentTime;
+    }
+
     this.animId = requestAnimationFrame(this.loop);
   };
 
-  private update() {
-    if (!this.running) return;
+  private update(dt: number) {
+    this.scrollY += this.speed * dt;
 
-    this.scrollY += this.speed;
-
-    // Check if bottommost row has passed off screen
     if (this.rows.length > 0) {
       const bottomRow = this.rows[0];
       const bottomRowY = this.ch - (bottomRow.rowIndex * this.rowHeight - this.scrollY);
 
       if (bottomRowY > this.ch + this.rowHeight) {
-        // Did player miss a safe tile in this row?
         const missedSafe = bottomRow.tiles.some((t) => t.type === 'safe' && !t.tapped);
         if (missedSafe) {
           this.onFail('SAFE TILE MISSED!');
@@ -165,7 +189,6 @@ export class DontTapRedGame implements GameInstance {
       }
     }
 
-    // Spawn more rows at top
     const topRow = this.rows[this.rows.length - 1];
     const topRowY = this.ch - (topRow.rowIndex * this.rowHeight - this.scrollY);
     if (topRowY > -100) {
@@ -173,7 +196,7 @@ export class DontTapRedGame implements GameInstance {
     }
 
     if (this.screenShake > 0) {
-      this.screenShake *= 0.88;
+      this.screenShake *= Math.pow(0.88, dt);
       if (this.screenShake < 0.1) this.screenShake = 0;
     }
   }
@@ -187,13 +210,11 @@ export class DontTapRedGame implements GameInstance {
       ctx.translate((Math.random() - 0.5) * this.screenShake, (Math.random() - 0.5) * this.screenShake);
     }
 
-    // Background
     ctx.fillStyle = '#080A10';
     ctx.fillRect(0, 0, this.cw, this.ch);
 
     const colW = this.cw / this.numCols;
 
-    // Draw Column Dividers
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.lineWidth = 1;
     for (let c = 1; c < this.numCols; c++) {
@@ -203,7 +224,6 @@ export class DontTapRedGame implements GameInstance {
       ctx.stroke();
     }
 
-    // Draw Rows & Tiles
     for (const r of this.rows) {
       const rowY = this.ch - (r.rowIndex * this.rowHeight - this.scrollY);
       if (rowY < -100 || rowY > this.ch + 150) continue;
@@ -224,13 +244,11 @@ export class DontTapRedGame implements GameInstance {
             ctx.roundRect(tx + 4, ty + 4, colW - 8, this.rowHeight - 8, 8);
             ctx.fill();
 
-            // Inner gloss
             ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
             ctx.fillRect(tx + 8, ty + 8, colW - 16, 6);
             ctx.shadowBlur = 0;
           }
         } else if (t.type === 'danger') {
-          // Red bomb tile
           ctx.fillStyle = '#FF0055';
           ctx.shadowColor = '#FF0055';
           ctx.shadowBlur = 10;
@@ -248,7 +266,6 @@ export class DontTapRedGame implements GameInstance {
 
     ctx.restore();
 
-    // HUD
     ctx.font = '900 48px Impact, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FFFFFF';
@@ -259,6 +276,7 @@ export class DontTapRedGame implements GameInstance {
 
   destroy() {
     this.running = false;
+    this.timers.clearAll();
     if (this.animId) cancelAnimationFrame(this.animId);
   }
 }

@@ -1,6 +1,7 @@
 import { GameCallbacks, GameInstance } from '../types';
 import { sound } from '../audio';
 import { triggerHaptic } from '../player';
+import { TimerManager } from '@/game-engine/core/TimerManager';
 
 interface Platform {
   x: number;
@@ -8,10 +9,6 @@ interface Platform {
   width: number;
   height: number;
   color: string;
-  isMoving?: boolean;
-  moveSpeed?: number;
-  minY?: number;
-  maxY?: number;
 }
 
 interface Particle {
@@ -29,12 +26,15 @@ export class OneMoreJumpGame implements GameInstance {
   private ctx!: CanvasRenderingContext2D;
   private callbacks!: GameCallbacks;
   private running: boolean = false;
+  private paused: boolean = false;
   private animId: number = 0;
+  private lastTime: number = 0;
+
+  private timers: TimerManager = new TimerManager();
 
   private cw: number = 400;
   private ch: number = 600;
 
-  // Player physics
   private px: number = 80;
   private py: number = 400;
   private psize: number = 20;
@@ -73,8 +73,10 @@ export class OneMoreJumpGame implements GameInstance {
   }
 
   start(seed: number = 42) {
+    this.timers.clearAll();
     this.resize();
     this.running = true;
+    this.paused = false;
     this.score = 0;
     this.combo = 0;
     this.currentPlatformIndex = 0;
@@ -82,26 +84,36 @@ export class OneMoreJumpGame implements GameInstance {
     this.cameraX = 0;
     this.targetCameraX = 0;
 
-    // Create initial platform
     const startY = this.ch - 140;
     this.platforms = [
       { x: 40, y: startY, width: 120, height: 18, color: '#00F0FF' },
     ];
 
-    // Player starts on first platform
     this.px = 80;
     this.py = startY - this.psize;
     this.vx = 0;
     this.vy = 0;
     this.isAirborne = false;
 
-    // Generate upcoming platforms
     for (let i = 0; i < 6; i++) {
       this.spawnNextPlatform();
     }
 
     this.callbacks.onScoreUpdate(0);
-    this.loop();
+    this.lastTime = performance.now();
+    this.loop(this.lastTime);
+  }
+
+  pause() {
+    this.paused = true;
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(true);
+  }
+
+  resume() {
+    if (!this.running) return;
+    this.paused = false;
+    this.lastTime = performance.now();
+    if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(false);
   }
 
   restart(seed?: number) {
@@ -115,7 +127,6 @@ export class OneMoreJumpGame implements GameInstance {
     const width = Math.max(70, 110 - this.score * 1.5);
     const height = 18;
 
-    // Vary height
     const deltaY = (Math.random() - 0.5) * 80;
     const clampedY = Math.max(220, Math.min(this.ch - 100, prev.y + deltaY));
 
@@ -133,9 +144,8 @@ export class OneMoreJumpGame implements GameInstance {
 
   handleInput(type: 'tap' | 'press' | 'release' | 'move') {
     if (type !== 'tap' && type !== 'press') return;
-    if (!this.running || this.isAirborne) return;
+    if (!this.running || this.paused || this.isAirborne) return;
 
-    // Launch leap!
     this.isAirborne = true;
     this.vx = this.jumpPowerX;
     this.vy = this.jumpPowerY;
@@ -143,7 +153,6 @@ export class OneMoreJumpGame implements GameInstance {
     sound.playJump();
     triggerHaptic('medium');
 
-    // Jump sparks
     for (let i = 0; i < 10; i++) {
       this.particles.push({
         x: this.px + this.psize / 2,
@@ -157,37 +166,41 @@ export class OneMoreJumpGame implements GameInstance {
     }
   }
 
-  private loop = () => {
-    if (!this.ctx) return;
-    this.update();
-    this.draw();
+  private loop = (currentTime: number) => {
+    if (!this.running) return;
+
+    if (!this.paused) {
+      const deltaMs = currentTime - this.lastTime;
+      const dt = Math.min(deltaMs / (1000 / 60), 2.5);
+      this.lastTime = currentTime;
+
+      this.update(dt);
+      this.draw();
+    } else {
+      this.lastTime = currentTime;
+    }
+
     this.animId = requestAnimationFrame(this.loop);
   };
 
-  private update() {
-    if (!this.running) return;
-
+  private update(dt: number) {
     if (this.isAirborne) {
-      this.px += this.vx;
-      this.py += this.vy;
-      this.vy += this.gravity;
+      this.px += this.vx * dt;
+      this.py += this.vy * dt;
+      this.vy += this.gravity * dt;
 
-      // Camera smoothly tracks player
       this.targetCameraX = this.px - 100;
 
-      // Check landing on any forward platform
       for (let i = this.currentPlatformIndex + 1; i < this.platforms.length; i++) {
         const plat = this.platforms[i];
 
-        // Landing condition: falling downwards, feet align with top of platform
         if (
           this.vy > 0 &&
           this.py + this.psize >= plat.y &&
-          this.py + this.psize <= plat.y + 16 &&
+          this.py + this.psize <= plat.y + 18 &&
           this.px + this.psize >= plat.x &&
           this.px <= plat.x + plat.width
         ) {
-          // Landed successfully!
           this.isAirborne = false;
           this.vy = 0;
           this.vx = 0;
@@ -195,7 +208,6 @@ export class OneMoreJumpGame implements GameInstance {
           this.currentPlatformIndex = i;
           this.score++;
 
-          // Check for bullseye center landing
           const platCenter = plat.x + plat.width / 2;
           const playerCenter = this.px + this.psize / 2;
           const distToCenter = Math.abs(playerCenter - platCenter);
@@ -211,33 +223,28 @@ export class OneMoreJumpGame implements GameInstance {
           }
 
           this.callbacks.onScoreUpdate(this.score);
-
-          // Add next platform ahead
           this.spawnNextPlatform();
           break;
         }
       }
 
-      // Check fell into abyss
       if (this.py > this.ch + 100) {
         this.running = false;
         sound.playGameOver();
         triggerHaptic('heavy');
-        setTimeout(() => {
+        this.timers.setTimeout(() => {
           this.callbacks.onGameOver(this.score, { combo: this.combo });
         }, 700);
       }
     }
 
-    // Camera follow
-    this.cameraX += (this.targetCameraX - this.cameraX) * 0.1;
+    this.cameraX += (this.targetCameraX - this.cameraX) * Math.min(1, 0.1 * dt);
 
-    // Particles
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.alpha -= 0.03;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.alpha -= 0.03 * dt;
       if (p.alpha <= 0) this.particles.splice(i, 1);
     }
   }
@@ -246,7 +253,6 @@ export class OneMoreJumpGame implements GameInstance {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.cw, this.ch);
 
-    // Deep space gradient
     const bg = ctx.createLinearGradient(0, 0, 0, this.ch);
     bg.addColorStop(0, '#0c0e18');
     bg.addColorStop(1, '#06070a');
@@ -256,7 +262,6 @@ export class OneMoreJumpGame implements GameInstance {
     ctx.save();
     ctx.translate(-this.cameraX, 0);
 
-    // Draw Platforms
     for (const p of this.platforms) {
       if (p.x + p.width > this.cameraX - 50 && p.x < this.cameraX + this.cw + 50) {
         ctx.fillStyle = p.color;
@@ -266,14 +271,12 @@ export class OneMoreJumpGame implements GameInstance {
         ctx.roundRect(p.x, p.y, p.width, p.height, 6);
         ctx.fill();
 
-        // Platform center target marker
         ctx.fillStyle = '#FFFFFF';
         ctx.shadowBlur = 0;
         ctx.fillRect(p.x + p.width / 2 - 4, p.y, 8, p.height);
       }
     }
 
-    // Draw Particles
     for (const p of this.particles) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, p.alpha);
@@ -282,7 +285,6 @@ export class OneMoreJumpGame implements GameInstance {
       ctx.restore();
     }
 
-    // Draw Player
     ctx.fillStyle = '#FFFFFF';
     ctx.shadowColor = '#00FFA3';
     ctx.shadowBlur = 12;
@@ -290,9 +292,8 @@ export class OneMoreJumpGame implements GameInstance {
     ctx.roundRect(this.px, this.py, this.psize, this.psize, 4);
     ctx.fill();
 
-    ctx.restore(); // Undo camera
+    ctx.restore();
 
-    // Score HUD
     ctx.font = '900 48px Impact, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FFFFFF';
@@ -309,6 +310,7 @@ export class OneMoreJumpGame implements GameInstance {
 
   destroy() {
     this.running = false;
+    this.timers.clearAll();
     if (this.animId) cancelAnimationFrame(this.animId);
   }
 }
