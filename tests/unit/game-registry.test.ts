@@ -24,6 +24,7 @@ describe('Game Registry', () => {
     for (const meta of GAMES_CATALOG) {
       const instance = createGameInstance(meta.id);
       expect(instance).toBeDefined();
+      if (!instance) throw new Error(`Failed to create game instance for ${meta.id}`);
       expect(typeof instance.init).toBe('function');
       expect(typeof instance.start).toBe('function');
       expect(typeof instance.handleInput).toBe('function');

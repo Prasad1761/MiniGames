@@ -1,7 +1,7 @@
-"use client';
+"use client";
 
 import React, { useState, useEffect } from 'react';
-import { Header } from './Header';
+import Header from './Header';
 import { usePathname } from 'next/navigation';
 
 export default function UnifiedHeader() {

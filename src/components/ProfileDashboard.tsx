@@ -25,10 +25,9 @@ import {
   getPlayerName,
   getHighScores,
   setPlayerName,
-  getPersonalBest,
-  getTotalGamesPlayed
+  getPersonalBest
 } from '@/lib/player';
-import { getUnlockedAchievements, ACHIEVEMENTS_LIST } from '@/lib/progression/achievements';
+import { getUnlockedAchievements, getTotalGamesPlayed, ACHIEVEMENTS_LIST } from '@/lib/progression/achievements';
 
 interface ProfileData {
   username: string;
@@ -430,7 +429,7 @@ export default function ProfileDashboard({ initialData, isOwner = false }: Profi
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
-                          <h4 className={`text-sm font-bold ${isUnlocked ? 'text-white' : 'text-gray-400'}`>
+                          <h4 className={isUnlocked ? 'text-sm font-bold text-white' : 'text-sm font-bold text-gray-400'}>
                             {achievement.title}
                           </h4>
                           {isUnlocked ? (

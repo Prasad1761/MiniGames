@@ -188,7 +188,7 @@ export class CompetitiveEngine {
           createdAt: new Date().toISOString(),
           isDaily,
           isPersonalBest: true,
-          isNewPersonalBest: scoreResult.isNewRecord // Would need scoreResult
+          isNewPersonalBest: false
         });
       }
     }
