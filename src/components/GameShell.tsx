@@ -26,6 +26,7 @@ import {
   recordScore,
 } from '@/lib/player';
 import { incrementTotalGamesPlayed, unlockAchievement } from '@/lib/progression/achievements';
+import { CompetitiveEngine } from '@/lib/competitive/CompetitiveEngine';
 import ScoreCardModal from './ScoreCardModal';
 import { GAMES_CATALOG } from '@/lib/games/registry';
 
@@ -131,6 +132,25 @@ export default function GameShell({
           if (data.rank) setScoreRank(data.rank);
         })
         .catch((err) => console.error('Score submit error:', err));
+
+      // Integrate with Competitive Engine for achievements and social features
+      CompetitiveEngine.getInstance().recordGameResult(game.id, score, isDaily, meta)
+        .then((result) => {
+          if (result?.achievements && result.achievements.length > 0) {
+            // Emit achievement unlock event for UI updates
+            window.dispatchEvent(new CustomEvent('achievementsUnlocked', {
+              detail: result.achievements
+            }));
+          }
+
+          if (result?.challengesCompleted && result.challengesCompleted.length > 0) {
+            // Friend challenge completed
+            window.dispatchEvent(new CustomEvent('challengeCompleted', {
+              detail: result.challengesCompleted
+            }));
+          }
+        })
+        .catch((err) => console.error('Competitive engine integration error:', err));
     },
     [game.id, game.lowerIsBetter, challengeTarget, isDaily, dailyDate]
   );

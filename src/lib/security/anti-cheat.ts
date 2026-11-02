@@ -18,6 +18,9 @@ export const GAME_BOUNDS: Record<string, GameScoreBound> = {
   'perfect-timing': { min: 0, max: 200, minDurationMsPerUnit: 350 },
   'merge-rush': { min: 0, max: 100000, minDurationMsPerUnit: 200 },
   'impossible-maze': { min: 1, max: 50, minDurationMsPerUnit: 2000 },
+  'retro-runner': { min: 0, max: 999999, minDurationMsPerUnit: 100 },  // Added missing bound
+  'asteroid-blast': { min: 0, max: 999999, minDurationMsPerUnit: 200 },  // Added missing bound
+  'puzzle-crash': { min: 0, max: 999999, minDurationMsPerUnit: 300 },  // Added missing bound
 };
 
 /**

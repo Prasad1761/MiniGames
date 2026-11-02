@@ -83,8 +83,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Challenge not found' }, { status: 404 });
     }
 
-    // Check expiration
-    if (challenge.expiresAt && new Date() > challenge.expiresAt) {
+    // Centralized expiration check - only run once per request
+    const now = new Date();
+    if (challenge.expiresAt && now > challenge.expiresAt) {
       return NextResponse.json(
         { error: 'This challenge has expired', expired: true, challenge },
         { status: 410 }

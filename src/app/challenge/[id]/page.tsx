@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Trophy, Swords, Play, Sparkles, AlertCircle, Clock, Copy, Check, ArrowRight } from 'lucide-react';
+import { Trophy, Swords, Play, Sparkles, AlertCircle, Clock, Copy, Check, ArrowRight, Users, Share2, Award } from 'lucide-react';
 import { getGameById, createGameInstance } from '@/lib/games/registry';
+import { CompetitiveEngine } from '@/lib/competitive/CompetitiveEngine';
 import GameShell from '@/components/GameShell';
 
 interface ChallengeData {

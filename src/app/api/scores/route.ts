@@ -5,6 +5,7 @@ import {
   sanitizeUsername,
   checkRateLimit,
 } from '@/lib/security/anti-cheat';
+import { verifySessionSignature } from '@/lib/security/crypto';
 import { GAMES_CATALOG } from '@/lib/games/registry';
 
 export async function GET(req: NextRequest) {
@@ -51,6 +52,9 @@ export async function GET(req: NextRequest) {
       createdAt: s.createdAt,
       isDaily: s.isDaily,
       meta: s.meta ? JSON.parse(s.meta) : null,
+      isFriendChallenge: false,
+      isPersonalBest: false,
+      isNewPersonalBest: false,
     }));
 
     return NextResponse.json({ scores: formatted });
@@ -64,7 +68,7 @@ export async function POST(req: NextRequest) {
   try {
     const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
     const body = await req.json();
-    const {
+      const {
       gameId,
       score,
       anonymousId,
@@ -74,10 +78,26 @@ export async function POST(req: NextRequest) {
       dailyDate,
       durationMs,
       runSessionId,
+      runSignature,
     } = body;
 
     if (!gameId || typeof score !== 'number' || !anonymousId) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
+    }
+
+    // Validate daily mode: if isDaily is true, dailyDate must be provided
+    if (isDaily && !dailyDate) {
+      return NextResponse.json({ error: 'Daily scores require dailyDate parameter' }, { status: 400 });
+    }
+    if (!isDaily && dailyDate) {
+      return NextResponse.json({ error: 'Non-daily scores cannot have dailyDate' }, { status: 400 });
+    }
+
+    // Verify session signature if runSessionId is provided
+    if (runSessionId) {
+      if (!runSignature || !verifySessionSignature(runSessionId, runSignature)) {
+        return NextResponse.json({ error: 'Invalid or missing session signature' }, { status: 403 });
+      }
     }
 
     // Rate Limiting (max 30 submissions per minute per client)

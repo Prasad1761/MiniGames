@@ -23,10 +23,30 @@ export default function Header() {
   const [username, setUsername] = useState('ArcadePlayer');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathname = usePathname();
+  const [achievementCount, setAchievementCount] = useState(0);
 
   useEffect(() => {
     setMuted(sound.isMuted());
     setUsername(getPlayerName());
+
+    // Load achievement count
+    const loadAchievementCount = () => {
+      const unlocked = JSON.parse(localStorage.getItem('arcade_pulse_unlocked_achievements') || '[]');
+      setAchievementCount(unlocked.length);
+    };
+
+    loadAchievementCount();
+
+    // Listen for achievement unlock events
+    const handleAchievementUnlock = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && customEvent.detail.length) {
+        setAchievementCount(prev => prev + customEvent.detail.length);
+      }
+    };
+
+    window.addEventListener('achievementsUnlocked', handleAchievementUnlock);
+    return () => window.removeEventListener('achievementsUnlocked', handleAchievementUnlock);
   }, []);
 
   const handleToggleSound = () => {
@@ -104,10 +124,15 @@ export default function Header() {
             {/* Profile Link */}
             <Link
               href="/profile"
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-white/10 to-white/5 hover:from-white/15 hover:to-white/10 border border-white/10 text-xs font-bold text-gray-200 transition-all active:scale-95"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-white/10 to-white/5 hover:from-white/15 hover:to-white/10 border border-white/10 text-xs font-bold text-gray-200 transition-all active:scale-95 relative"
             >
               <User className="w-3.5 h-3.5 text-pink-400" />
               <span className="max-w-[80px] sm:max-w-[120px] truncate">{username}</span>
+              {achievementCount > 0 && (
+                <div className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-gradient-to-r from-pink-500 to-amber-500 flex items-center justify-center shadow-lg shadow-pink-500/50">
+                  <span className="text-[6px] font-black text-white">{Math.min(achievementCount, 99)}</span>
+                </div>
+              )}
             </Link>
 
             {/* Mobile Menu Button */}

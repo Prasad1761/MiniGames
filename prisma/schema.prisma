@@ -16,6 +16,7 @@ model Player {
   scores       Score[]
   challenges   Challenge[]   @relation("CreatorChallenges")
   runSessions  RunSession[]
+  achievements Achievement[]
 
   @@index([anonymousId])
 }
@@ -65,4 +66,25 @@ model Challenge {
 
   @@index([creatorId])
   @@index([expiresAt])
+}
+
+model Achievement {
+  id            String   @id @default(uuid())
+  playerId      String
+  achievementId String
+  player        Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+
+  @@unique([playerId, achievementId])
+}
+
+model Tournament {
+  id        String   @id @default(uuid())
+  name      String
+  gameId    String
+  startAt   DateTime
+  endAt     DateTime
+  createdAt DateTime @default(now())
+
+  @@index([gameId, startAt])
 }

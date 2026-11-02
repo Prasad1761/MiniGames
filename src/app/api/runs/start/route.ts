@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { checkRateLimit } from '@/lib/security/anti-cheat';
+import { signSessionId } from '@/lib/security/crypto';
 
 export async function POST(req: NextRequest) {
   try {
@@ -35,8 +36,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    const signature = signSessionId(run.id);
+
     return NextResponse.json({
       runSessionId: run.id,
+      signature,
       seed: run.seed,
       startedAt: run.startedAt,
     });
