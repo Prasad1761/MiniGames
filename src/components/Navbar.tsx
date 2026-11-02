@@ -45,7 +45,7 @@ export default function Navbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-black/70 border-b border-white/10 px-4 py-3">
+      <header className="sticky top-0 z-50 backdrop-blur-md bg-black/70 border-b border-white/10 px-4 py-3 hidden md:block">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           {/* Brand Logo */}
           <Link href="/" className="flex items-center gap-2 group">
@@ -122,6 +122,45 @@ export default function Navbar() {
           </div>
         </div>
       </header>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0B0E14]/95 backdrop-blur-lg border-t border-white/10 px-2 py-2 flex items-center justify-around">
+        <Link
+          href="/"
+          className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-cyan-400 text-[10px] font-bold p-1"
+        >
+          <Gamepad2 className="w-4 h-4" />
+          <span>Home</span>
+        </Link>
+        <Link
+          href="/games"
+          className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-orange-400 text-[10px] font-bold p-1"
+        >
+          <Flame className="w-4 h-4 text-orange-400" />
+          <span>Games</span>
+        </Link>
+        <Link
+          href="/daily"
+          className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-pink-400 text-[10px] font-bold p-1"
+        >
+          <Calendar className="w-4 h-4 text-pink-400" />
+          <span>Daily</span>
+        </Link>
+        <Link
+          href="/leaderboards"
+          className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-amber-400 text-[10px] font-bold p-1"
+        >
+          <Trophy className="w-4 h-4 text-amber-400" />
+          <span>Ranks</span>
+        </Link>
+        <Link
+          href="/profile"
+          className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-purple-400 text-[10px] font-bold p-1"
+        >
+          <User className="w-4 h-4 text-purple-400" />
+          <span>Profile</span>
+        </Link>
+      </nav>
 
       {/* Mobile Bottom Navigation Bar */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0B0E14]/95 backdrop-blur-lg border-t border-white/10 px-2 py-2 flex items-center justify-around">

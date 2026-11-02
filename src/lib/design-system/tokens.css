@@ -1,0 +1,89 @@
+/*
+ * ArcadePulse V2 Design System Tokens
+ * Centralized design tokens for responsive UI components
+ */
+
+:root {
+  /* Color Tokens */
+  --color-primary: #00F0FF;
+  --color-primary-dark: #00D4E6;
+  --color-primary-light: #33F5FF;
+
+  --color-secondary: #FF007A;
+  --color-secondary-dark: #E60070;
+  --color-secondary-light: #FF3A8A;
+
+  --color-accent: #FFE600;
+  --color-accent-dark: #E6D300;
+  --color-accent-light: #FFEE33;
+
+  --color-success: #00FFA3;
+  --color-warning: #FFE600;
+  --color-error: #FF3366;
+
+  --color-bg-dark: #0B0E14;
+  --color-bg-darker: #080A10;
+  --color-bg-card: #151A23;
+  --color-bg-overlay: rgba(11, 14, 20, 0.95);
+
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #B8C2CC;
+  --color-text-tertiary: #6B7885;
+  --color-text-muted: #4A5565;
+
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-hover: rgba(0, 240, 255, 0.3);
+
+  /* Typography Tokens */
+  --font-display: 'Space Grotesk', 'Impact', sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'SF Mono', Monaco, monospace;
+
+  /* Font Sizes - Responsive Scale */
+  --text-xs: clamp(0.625rem, 1.5vw, 0.75rem);
+  --text-sm: clamp(0.75rem, 2vw, 0.875rem);
+  --text-base: clamp(0.875rem, 2.5vw, 1rem);
+  --text-lg: clamp(1rem, 3vw, 1.125rem);
+  --text-xl: clamp(1.125rem, 3.5vw, 1.25rem);
+  --text-2xl: clamp(1.25rem, 4vw, 1.5rem);
+  --text-3xl: clamp(1.5rem, 5vw, 2rem);
+  --text-4xl: clamp(1.875rem, 6vw, 2.5rem);
+  --text-5xl: clamp(2.25rem, 7vw, 3rem);
+  --text-6xl: clamp(2.75rem, 8vw, 4rem);
+
+  /* Spacing Scale */
+  --space-1: clamp(0.25rem, 1vw, 0.5rem);
+  --space-2: clamp(0.5rem, 2vw, 1rem);
+  --space-3: clamp(1rem, 3vw, 1.5rem);
+  --space-4: clamp(1.5rem, 4vw, 2.5rem);
+  --space-5: clamp(2rem, 5vw, 4rem);
+  --space-6: clamp(3rem, 6vw, 6rem);
+
+  /* Border Radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-glow-cyan: 0 0 20px rgba(0, 240, 255, 0.3);
+  --shadow-glow-pink: 0 0 20px rgba(255, 0, 122, 0.3);
+  --shadow-glow-yellow: 0 0 20px rgba(255, 230, 0, 0.3);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Z-index */
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+
+  /* Component tokens */
+  --component-header-height: clamp(4rem, 8vh, 5rem);
+  --component-nav-height: clamp(4.5rem, 10vh, 5.5rem);
+}

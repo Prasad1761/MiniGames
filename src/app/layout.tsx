@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
-import Navbar from '@/components/Navbar';
+import UnifiedHeader from '@/components/UnifiedHeader';
 
 export const metadata: Metadata = {
   title: 'Arcade Pulse — Viral Mini-Games Platform',
@@ -27,8 +27,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-[#07090E] text-white flex flex-col antialiased selection:bg-cyan-500 selection:text-black">
-        <Navbar />
-        <main className="flex-1 w-full">{children}</main>
+        <UnifiedHeader />
+        <main className="flex-1 w-full pb-20 md:pb-10">{children}</main>
         <footer className="border-t border-white/10 py-6 px-4 text-center text-xs text-gray-500">
           <p className="font-semibold text-gray-400">
             ⚡ Arcade Pulse — Built for instant mobile fun.
